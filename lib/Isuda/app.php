@@ -75,7 +75,7 @@ $container = new class extends \Slim\Container {
         $keyword = rawurlencode($keyword);
         $this->requests[] = [
             'key' => $key,
-            'uri' => "stars?keyword={$keyword}",
+            'uri' => "{$this->origin}/stars?keyword={$keyword}",
         ];
     }
 
@@ -184,8 +184,6 @@ $app->get('/', function (Request $req, Response $c) {
     foreach ($entries as &$entry) {
         $entry['stars'] = $res[$entry['id']];
     }
-    var_dump($entries);exit;
-
 
     unset($entry);
 

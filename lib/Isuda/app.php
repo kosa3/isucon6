@@ -86,7 +86,7 @@ $container = new class extends \Slim\Container {
     }
 
     public function parseRequest($response) {
-        return $response->getBody()->getContents();
+        return \GuzzleHttp\json_decode($response->getBody()->getContents(), true);
     }
 
     public function parseErrorResponse($reason)
@@ -111,7 +111,7 @@ $container = new class extends \Slim\Container {
 
         $ret = [];
         foreach ($res as $index => $value) {
-            $ret[$this->requests[$index]['key']] = $value;
+            $ret[$this->requests[$index]['key']] = $value['stars'];
         }
 
         return $ret;

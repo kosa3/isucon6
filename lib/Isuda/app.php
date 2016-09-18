@@ -5,6 +5,7 @@ use Slim\Http\Request;
 use Slim\Http\Response;
 use PDO;
 use PDOWrapper;
+use GuzzleHttp\Pool;
 
 function config($key) {
     static $conf;
@@ -26,6 +27,9 @@ function config($key) {
 
 $container = new class extends \Slim\Container {
     public $dbh;
+    public $origin;
+    public $client;
+    public $requests = [];
     public function __construct() {
         parent::__construct();
 
@@ -35,6 +39,8 @@ $container = new class extends \Slim\Container {
             $_ENV['ISUDA_DB_PASSWORD'] ?? 'isucon',
             [ PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4" ]
         ));
+        $this->origin = config('isutar_origin');
+        $this->client = new \GuzzleHttp\Client();
     }
 
     public function htmlify($content) {
@@ -65,15 +71,50 @@ $container = new class extends \Slim\Container {
         return nl2br($content, true);
     }
 
-    public function load_stars($keyword) {
+    public function addRequest($key, $keyword) {
         $keyword = rawurlencode($keyword);
-        $origin = config('isutar_origin');
-        $url = "{$origin}/stars?keyword={$keyword}";
-        $ua = new \GuzzleHttp\Client;
-        $res = $ua->request('GET', $url)->getBody();
-        $data = json_decode($res, true);
+        $this->requests[] = [
+            'key' => $key,
+            'uri' => "stars?keyword={$keyword}",
+        ];
+    }
 
-        return $data['stars'];
+    public function createRequest() {
+        foreach ($this->requests as $request) {
+            yield new \GuzzleHttp\Psr7\Request('GET', $request['uri']);
+        }
+    }
+
+    public function parseRequest($response) {
+        return $response->getBody()->getContents();
+    }
+
+    public function parseErrorResponse($reason)
+    {
+        return [];
+    }
+
+    public function load_stars() {
+        $res = [];
+        $pool = new Pool($this->client, $this->createRequest(), [
+            'concurrency' => 20,
+            'fulfilled' => function ($response, $index) use (&$res) {
+                $res[$index] = $this->parseRequest($response);
+            },
+            'rejected' => function ($reason, $index) use (&$res) {
+                $res[$index] = $this->parseErrorResponse($reason);
+            },
+        ]);
+
+        $promise = $pool->promise();
+        $promise->wait();
+
+        $ret = [];
+        foreach ($res as $index => $value) {
+            $ret[$this->requests[$index]['key']] = $value;
+        }
+
+        return $ret;
     }
 };
 $container['view'] = function ($container) {
@@ -133,10 +174,19 @@ $app->get('/', function (Request $req, Response $c) {
         "LIMIT $PER_PAGE ".
         "OFFSET $offset"
     );
+
     foreach ($entries as &$entry) {
         $entry['html']  = $this->htmlify($entry['description']);
-        $entry['stars'] = $this->load_stars($entry['keyword']);
+        $this->addRequest($entry['id'], $entry['keyword']);
     }
+    $res = $this->load_stars();
+
+    foreach ($entries as &$entry) {
+        $entry['stars'] = $res[$entry['id']];
+    }
+    var_dump($entries);exit;
+
+
     unset($entry);
 
     $total_entries = $this->dbh->select_one(
@@ -241,7 +291,10 @@ $app->get('/keyword/{keyword}', function (Request $req, Response $c) {
     , $keyword);
     if (empty($entry)) return $c->withStatus(404);
     $entry['html'] = $this->htmlify($entry['description']);
-    $entry['stars'] = $this->load_stars($entry['keyword']);
+
+    $this->addRequest($entry['id'], $entry['keyword']);
+    $res = $this->load_stars();
+    $entry['stars'] = $res[$entry['id']];
 
     return $this->view->render($c, 'keyword.twig', [
         'entry' => $entry, 'stash' => $this->get('stash')

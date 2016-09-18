@@ -47,20 +47,29 @@ $container = new class extends \Slim\Container {
         if (!isset($content)) {
             return '';
         }
+
+        // orderつけてもつけなくてもview側の検索結果が変わらなかったのでorderを削除
         $keywords = $this->dbh->select_all(
-            'SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC'
+            'SELECT keyword FROM entry'
         );
+
         $kw2sha = [];
 
         // NOTE: avoid pcre limitation "regular expression is too large at offset"
         for ($i = 0; !empty($kwtmp = array_slice($keywords, 500 * $i, 500)); $i++) {
+
+            // keywordsから500件取得している $kwtmp
+            // quotemeta — メタ文字をクォートする
             $re = implode('|', array_map(function ($keyword) { return quotemeta($keyword['keyword']); }, $kwtmp));
+
             preg_replace_callback("/($re)/", function ($m) use (&$kw2sha) {
                 $kw = $m[1];
                 return $kw2sha[$kw] = "isuda_" . sha1($kw);
             }, $content);
         }
+
         $content = strtr($content, $kw2sha);
+
         $content = html_escape($content);
         foreach ($kw2sha as $kw => $hash) {
             $url = '/keyword/' . rawurlencode($kw);
@@ -188,7 +197,7 @@ $app->get('/', function (Request $req, Response $c) {
     unset($entry);
 
     $total_entries = $this->dbh->select_one(
-        'SELECT COUNT(*) FROM entry'
+        'SELECT COUNT(id) FROM entry'
     );
     $last_page = ceil($total_entries / $PER_PAGE);
     $pages = range(max(1, $page-5), min($last_page, $page+5));
@@ -255,6 +264,8 @@ $app->get('/login', function (Request $req, Response $c) {
     ]);
 })->add($mw['set_name'])->setName('/login');
 
+
+// ログインボタンを押下したときの処理
 $app->post('/login', function (Request $req, Response $c) {
     $name = $req->getParsedBody()['name'];
     $row = $this->dbh->select_row(

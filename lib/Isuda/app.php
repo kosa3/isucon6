@@ -41,9 +41,12 @@ $container = new class extends \Slim\Container {
         if (!isset($content)) {
             return '';
         }
+
+        // orderつけてもつけなくてもview側の検索結果が変わらなかったのでorderを削除
         $keywords = $this->dbh->select_all(
-            'SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC'
+            'SELECT * FROM entry'
         );
+
         $kw2sha = [];
 
         // NOTE: avoid pcre limitation "regular expression is too large at offset"
@@ -133,6 +136,7 @@ $app->get('/', function (Request $req, Response $c) {
         "LIMIT $PER_PAGE ".
         "OFFSET $offset"
     );
+
     foreach ($entries as &$entry) {
         $entry['html']  = $this->htmlify($entry['description']);
         $entry['stars'] = $this->load_stars($entry['keyword']);
@@ -140,7 +144,7 @@ $app->get('/', function (Request $req, Response $c) {
     unset($entry);
 
     $total_entries = $this->dbh->select_one(
-        'SELECT COUNT(*) FROM entry'
+        'SELECT COUNT(id) FROM entry'
     );
     $last_page = ceil($total_entries / $PER_PAGE);
     $pages = range(max(1, $page-5), min($last_page, $page+5));
@@ -207,6 +211,8 @@ $app->get('/login', function (Request $req, Response $c) {
     ]);
 })->add($mw['set_name'])->setName('/login');
 
+
+// ログインボタンを押下したときの処理
 $app->post('/login', function (Request $req, Response $c) {
     $name = $req->getParsedBody()['name'];
     $row = $this->dbh->select_row(

@@ -44,20 +44,26 @@ $container = new class extends \Slim\Container {
 
         // orderつけてもつけなくてもview側の検索結果が変わらなかったのでorderを削除
         $keywords = $this->dbh->select_all(
-            'SELECT * FROM entry'
+            'SELECT keyword FROM entry'
         );
 
         $kw2sha = [];
 
         // NOTE: avoid pcre limitation "regular expression is too large at offset"
         for ($i = 0; !empty($kwtmp = array_slice($keywords, 500 * $i, 500)); $i++) {
+
+            // keywordsから500件取得している $kwtmp
+            // quotemeta — メタ文字をクォートする
             $re = implode('|', array_map(function ($keyword) { return quotemeta($keyword['keyword']); }, $kwtmp));
+
             preg_replace_callback("/($re)/", function ($m) use (&$kw2sha) {
                 $kw = $m[1];
                 return $kw2sha[$kw] = "isuda_" . sha1($kw);
             }, $content);
         }
+
         $content = strtr($content, $kw2sha);
+
         $content = html_escape($content);
         foreach ($kw2sha as $kw => $hash) {
             $url = '/keyword/' . rawurlencode($kw);
@@ -75,7 +81,6 @@ $container = new class extends \Slim\Container {
         $ua = new \GuzzleHttp\Client;
         $res = $ua->request('GET', $url)->getBody();
         $data = json_decode($res, true);
-
         return $data['stars'];
     }
 };
